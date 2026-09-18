@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Getter
 public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBehavior, CosmeticMovementBehavior {
@@ -153,6 +154,65 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
 
     /** Armour-stand metadata index of the head pose: the client-flags byte is 15, the poses follow. */
     private static final int HEAD_POSE_INDEX = 16;
+    /** How far apart the head and body are allowed to drift before the body is dragged after the head. */
+    private static final float MAX_HEAD_BODY_DEGREES = 45f;
+    /** Movement below this is noise, not a step, and must not re-aim the body. */
+    private static final double MOVED_BLOCKS = 0.08;
+    /**
+     * Movement above this in one update is a TELEPORT, not a walk, and says nothing about which way the
+     * body is facing. Sprinting covers about 0.3 blocks a tick, so a couple of blocks between updates is
+     * already generous. Without this the body aims along the teleport vector: measured, a wearer that
+     * walked south and was then teleported back north had its body derived as due north.
+     */
+    private static final double TELEPORTED_BLOCKS = 2.0;
+
+    /** Per-wearer body yaw and the position it was last derived from. */
+    private static final Map<UUID, float[]> BODY_YAW = new ConcurrentHashMap<>();
+
+    private static float wrapDegrees(float degrees) {
+        float d = degrees % 360f;
+        if (d >= 180f) d -= 360f;
+        if (d < -180f) d += 360f;
+        return d;
+    }
+
+    /**
+     * The direction the wearer's BODY faces, derived here rather than read from the server.
+     *
+     * `LivingEntity#getBodyYaw()` cannot be used: measured over a scripted walk (five seconds in each of
+     * four directions, sampled every 5 ticks), it held 40 degrees through an eleven-block walk due west
+     * and then jumped in 90-degree steps unrelated to the direction travelled. Whatever it tracks for a
+     * player, it is not where the body is pointing.
+     *
+     * So it is reconstructed from the thing that does determine it: movement. A player's body faces the
+     * way they last walked, holds that while they stand still, and is dragged after the head only once
+     * the two are further apart than the client allows. That is the vanilla rule, and it is cheap —
+     * one displacement per update.
+     */
+    private static float bodyYawOf(@NotNull LivingEntity living) {
+        Location at = living.getLocation();
+        float look = at.getYaw();
+        float[] state = BODY_YAW.computeIfAbsent(living.getUniqueId(),
+                key -> new float[]{look, (float) at.getX(), (float) at.getZ()});
+        double dx = at.getX() - state[1], dz = at.getZ() - state[2];
+        double moved2 = dx * dx + dz * dz;
+        if (moved2 >= TELEPORTED_BLOCKS * TELEPORTED_BLOCKS) {
+            // A jump, not a walk: keep the body where it was and re-anchor, so the next real step is
+            // measured from here instead of from wherever the wearer used to be.
+            state[1] = (float) at.getX();
+            state[2] = (float) at.getZ();
+        } else if (moved2 >= MOVED_BLOCKS * MOVED_BLOCKS) {
+            // Minecraft yaw: 0 faces +z, 90 faces -x.
+            state[0] = (float) Math.toDegrees(Math.atan2(-dx, dz));
+            state[1] = (float) at.getX();
+            state[2] = (float) at.getZ();
+        }
+        float apart = wrapDegrees(look - state[0]);
+        if (Math.abs(apart) > MAX_HEAD_BODY_DEGREES) {
+            state[0] = wrapDegrees(look - Math.signum(apart) * MAX_HEAD_BODY_DEGREES);
+        }
+        return state[0];
+    }
 
     /**
      * Turn a worn backpack to face the wearer's BODY instead of wherever they are LOOKING.
@@ -173,9 +233,12 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
      */
     private void alignBackpackToBody(@NotNull Entity entity, int armorStandId, List<Player> viewers) {
         if (!(entity instanceof LivingEntity living)) return;
-        float correction = living.getLocation().getYaw() - living.getBodyYaw();
-        MessagesUtil.sendDebugMessages("Backpack pose for " + entity.getName() + ": look "
-                + living.getLocation().getYaw() + ", body " + living.getBodyYaw() + ", pose " + correction);
+        float look = living.getLocation().getYaw();
+        float body = bodyYawOf(living);
+        float correction = wrapDegrees(look - body);
+        MessagesUtil.sendDebugMessages("Backpack pose for " + entity.getName() + ": look " + look
+                + ", body " + body + ", pose " + correction + ", serverBody " + living.getBodyYaw()
+                + ", viewers " + viewers.size() + ", stand " + armorStandId);
         NMSHandlers.getHandler().getPacketBuilder()
                 .buildEntityPosePacket(armorStandId, Map.of(HEAD_POSE_INDEX,
                         new EulerAngle(0, Math.toRadians(correction), 0)))
