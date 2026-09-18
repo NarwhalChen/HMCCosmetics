@@ -17,6 +17,7 @@ import org.bukkit.Location;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -52,6 +53,7 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
 
         Location entityLocation = entity.getLocation();
         Location loc = entityLocation.clone().add(0, 2, 0);
+        loc.setYaw(wearerBodyYaw(entity));
 
         UserBackpackManager backpackManager = user.getUserBackpackManager();
         if(backpackManager == null) return;
@@ -135,6 +137,7 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
 
         Location entityLocation = entity.getLocation();
         Location loc = entityLocation.clone().add(0, 2, 0);
+        loc.setYaw(wearerBodyYaw(entity));
 
         UserBackpackManager backpackManager = user.getUserBackpackManager();
         if(backpackManager == null) return;
@@ -144,6 +147,27 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
 
         entityManager.teleport(loc);
         entityManager.setRotation((int) loc.getYaw(), isFirstPersonCompadible());
+    }
+
+    /**
+     * The yaw a worn backpack should face: the wearer's BODY, not where the wearer is LOOKING.
+     *
+     * {@code entity.getLocation().getYaw()} is the head/look yaw for a player, so the backpack swung with
+     * the camera: standing still and looking 30 degrees aside rotated it with the view, leaving it at an
+     * angle across the back instead of flat against it. A player's body only follows the head while they
+     * move, so the two disagree constantly in normal play.
+     *
+     * It has to be set on the LOCATION, before {@code teleport()}. The stand's head-slot item follows the
+     * stand's BODY yaw, and the body yaw is what the teleport packet carries; {@code setRotation} only
+     * adds a head-rotate packet unless the cosmetic is first-person compatible, and a head-rotate packet
+     * does not turn the worn item. Setting only the {@code setRotation} argument therefore changes
+     * nothing visible — measured: the wing still tracked the head 1:1 with that version installed.
+     *
+     * Non-living carriers have no body/head split, so they keep the location yaw.
+     */
+    private static float wearerBodyYaw(@NotNull Entity entity) {
+        if (!(entity instanceof LivingEntity living)) return entity.getLocation().getYaw();
+        return living.getBodyYaw();
     }
 
     public boolean isFirstPersonCompadible() {
