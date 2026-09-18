@@ -255,6 +255,11 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
      */
     private void alignBackpackToBody(@NotNull Entity entity, int armorStandId, List<Player> viewers) {
         if (!(entity instanceof LivingEntity living)) return;
+        // mc-rpg probe: with `plugins/HMCCosmetics/nopose.txt` present this method does nothing, which is
+        // byte-for-byte what upstream does (sending the pose is the only thing this patch adds). It lets
+        // one session hold both configurations, so "stock" is a control measured with the same client on
+        // the same frames rather than a memory of an earlier round.
+        if (new java.io.File(HMCCosmeticsPlugin.getInstance().getDataFolder(), "nopose.txt").exists()) return;
         float look = living.getLocation().getYaw();
         float body = bodyYawOf(living);
         // MOUNT_TWIST_DEGREES is NOT added: see the acceptance record. Adding it reproduces the sweep's
