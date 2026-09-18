@@ -7,6 +7,7 @@ import com.hibiscusmc.hmccosmetics.cosmetic.behavior.CosmeticUpdateBehavior;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
 import com.hibiscusmc.hmccosmetics.user.manager.UserBackpackManager;
 import com.hibiscusmc.hmccosmetics.user.manager.UserEntity;
+import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import com.hibiscusmc.hmccosmetics.util.packets.HMCCPacketManager;
 import lombok.Getter;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
@@ -167,7 +168,10 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
      */
     private static float wearerBodyYaw(@NotNull Entity entity) {
         if (!(entity instanceof LivingEntity living)) return entity.getLocation().getYaw();
-        return living.getBodyYaw();
+        float bodyYaw = living.getBodyYaw();
+        MessagesUtil.sendDebugMessages("Backpack yaw for " + entity.getName() + ": body " + bodyYaw
+                + ", look " + entity.getLocation().getYaw());
+        return bodyYaw;
     }
 
     public boolean isFirstPersonCompadible() {
