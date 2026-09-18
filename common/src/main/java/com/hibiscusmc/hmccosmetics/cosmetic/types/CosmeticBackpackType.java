@@ -1,5 +1,6 @@
 package com.hibiscusmc.hmccosmetics.cosmetic.types;
 
+import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
 import com.hibiscusmc.hmccosmetics.config.Settings;
 import com.hibiscusmc.hmccosmetics.cosmetic.Cosmetic;
 import com.hibiscusmc.hmccosmetics.cosmetic.behavior.CosmeticMovementBehavior;
@@ -156,6 +157,22 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
     private static final int HEAD_POSE_INDEX = 16;
     /** How far apart the head and body are allowed to drift before the body is dragged after the head. */
     private static final float MAX_HEAD_BODY_DEGREES = 45f;
+    /**
+     * The head pose at which the cosmetic sits SQUARE, measured rather than derived.
+     *
+     * Sweeping the pose with the wearer looking straight ahead gave a clean line — +97 px at 15 degrees,
+     * +45 at 30, -12 at 45, -69 at 60, -174 at 90, about -3.6 px per degree — crossing zero near 44, not
+     * near 0. So something already in the chain turns the worn model by roughly this much before the
+     * pose is applied.
+     *
+     * It is almost certainly the wing asset's own `display.head.rotation`, which this repository sets to
+     * +45 to cancel the mount's measured 45-degree twist: two compensations composing. That is a
+     * HYPOTHESIS — what is measured is only the offset itself. Being a property of the worn model rather
+     * than of the plugin, a constant here is the wrong long-term home for it; it is here because the
+     * fork is ours and the alternative was guessing.
+     */
+    private static final float POSE_ZERO_OFFSET = 0f;   // reverted: 44 broke the square-on case
+
     /** Movement below this is noise, not a step, and must not re-aim the body. */
     private static final double MOVED_BLOCKS = 0.08;
     /**
@@ -236,13 +253,60 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
         float look = living.getLocation().getYaw();
         float body = bodyYawOf(living);
         float correction = wrapDegrees(look - body);
+        // mc-rpg probe: a file lets the value be swept between shots without rebuilding the jar.
+        Float override = poseOverride();
+        if (override != null) correction = override;
         MessagesUtil.sendDebugMessages("Backpack pose for " + entity.getName() + ": look " + look
                 + ", body " + body + ", pose " + correction + ", serverBody " + living.getBodyYaw()
                 + ", viewers " + viewers.size() + ", stand " + armorStandId);
-        NMSHandlers.getHandler().getPacketBuilder()
+        var wrapper = NMSHandlers.getHandler().getPacketBuilder()
                 .buildEntityPosePacket(armorStandId, Map.of(HEAD_POSE_INDEX,
-                        new EulerAngle(0, Math.toRadians(correction), 0)))
-                .sendPacket(viewers);
+                        new EulerAngle(0, Math.toRadians(correction), 0)));
+        describeWirePacket(wrapper);
+        wrapper.sendPacket(viewers);
+    }
+
+    /** mc-rpg probe: `plugins/HMCCosmetics/posetest.txt`, one number in degrees, or absent. */
+    private static Float poseOverride() {
+        try {
+            java.io.File f = new java.io.File(HMCCosmeticsPlugin.getInstance().getDataFolder(), "posetest.txt");
+            if (!f.isFile()) return null;
+            String raw = java.nio.file.Files.readString(f.toPath()).trim();
+            return raw.isEmpty() ? null : Float.valueOf(raw);
+        } catch (Throwable t) { return null; }
+    }
+
+    /**
+     * mc-rpg probe: decode the packet we are ABOUT TO SEND and print what is actually on the wire —
+     * the metadata index and the three floats. Reading the source said the yaw goes in `y`; reading the
+     * source has been wrong several times this week, and a pitch/yaw mix-up would explain every reading
+     * so far (a 30-degree PITCH is nearly invisible from behind, a 90-degree one is not).
+     */
+    private static void describeWirePacket(Object wrapper) {
+        try {
+            Object packet = wrapper.getClass().getMethod("toNativePacket").invoke(wrapper);
+            for (java.lang.reflect.Method m : packet.getClass().getMethods()) {
+                if (m.getParameterCount() != 0 || !java.util.List.class.isAssignableFrom(m.getReturnType())) continue;
+                Object items = m.invoke(packet);
+                if (!(items instanceof java.util.List<?> list) || list.isEmpty()) continue;
+                StringBuilder sb = new StringBuilder("PoseWire via ").append(m.getName()).append(": ");
+                for (Object item : list) {
+                    Object id = item.getClass().getMethod("id").invoke(item);
+                    Object value = item.getClass().getMethod("value").invoke(item);
+                    sb.append("index ").append(id).append(" = ").append(value)
+                      .append(" [").append(value.getClass().getSimpleName()).append("] ");
+                    for (String comp : new String[]{"getX", "getY", "getZ"}) {
+                        try { sb.append(comp).append('=').append(value.getClass().getMethod(comp).invoke(value)).append(' '); }
+                        catch (NoSuchMethodException ignored) { }
+                    }
+                }
+                MessagesUtil.sendDebugMessages(sb.toString());
+                return;
+            }
+            MessagesUtil.sendDebugMessages("PoseWire: no list accessor found on " + packet.getClass().getName());
+        } catch (Throwable t) {
+            MessagesUtil.sendDebugMessages("PoseWire FAILED: " + t.getClass().getName() + " " + t.getMessage());
+        }
     }
 
     public boolean isFirstPersonCompadible() {
