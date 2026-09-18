@@ -49,9 +49,9 @@ public class PlayerMovementListener implements Listener {
     private boolean updateDirtyLocation(final Player player, final Location nextLoc) {
         final SmallLocation previous = locations.computeIfAbsent(
             player.getUniqueId(),
-            $ -> SmallLocation.fromLocation(nextLoc)
+            $ -> SmallLocation.from(player, nextLoc)
         );
-        final SmallLocation next = SmallLocation.fromLocation(nextLoc);
+        final SmallLocation next = SmallLocation.from(player, nextLoc);
 
         if(next.distanceTo(previous) > 0.25) {
             this.locations.put(player.getUniqueId(), next);
@@ -59,6 +59,15 @@ public class PlayerMovementListener implements Listener {
         }
 
         if(next.yawDistanceTo(previous) > 5) {
+            this.locations.put(player.getUniqueId(), next);
+            return true;
+        }
+
+        // A worn backpack is oriented from the wearer's BODY yaw, which moves independently of the look
+        // yaw: a player who turns their head leaves the body behind, and the body then catches up on its
+        // own. Watching only the look yaw leaves the cosmetic at a stale angle for as long as the player
+        // holds still afterwards.
+        if(next.bodyYawDistanceTo(previous) > 5) {
             this.locations.put(player.getUniqueId(), next);
             return true;
         }
@@ -80,7 +89,8 @@ public class PlayerMovementListener implements Listener {
         double x,
         double y,
         double z,
-        float yaw
+        float yaw,
+        float bodyYaw
     ) {
         public double distanceTo(SmallLocation other) {
             double dx = this.x - other.x;
@@ -90,12 +100,21 @@ public class PlayerMovementListener implements Listener {
         }
 
         public float yawDistanceTo(SmallLocation other) {
-            float diff = Math.abs(this.yaw - other.yaw) % 360;
+            return angleBetween(this.yaw, other.yaw);
+        }
+
+        public float bodyYawDistanceTo(SmallLocation other) {
+            return angleBetween(this.bodyYaw, other.bodyYaw);
+        }
+
+        private static float angleBetween(float a, float b) {
+            float diff = Math.abs(a - b) % 360;
             return diff > 180 ? 360 - diff : diff;
         }
 
-        public static SmallLocation fromLocation(final Location location) {
-            return new SmallLocation(location.getX(), location.getY(), location.getZ(), location.getYaw());
+        public static SmallLocation from(final Player player, final Location location) {
+            return new SmallLocation(location.getX(), location.getY(), location.getZ(), location.getYaw(),
+                player.getBodyYaw());
         }
     }
 }

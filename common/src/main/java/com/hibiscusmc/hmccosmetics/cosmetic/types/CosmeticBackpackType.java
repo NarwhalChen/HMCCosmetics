@@ -17,9 +17,11 @@ import org.bukkit.Location;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.EulerAngle;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -61,6 +63,7 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
 
         entityManager.teleport(loc);
         entityManager.setRotation((int) loc.getYaw(), isFirstPersonCompadible());
+        alignBackpackToBody(entity, backpackManager.getFirstArmorStandId(), entityManager.getViewers());
 
         int firstArmorStandId = backpackManager.getFirstArmorStandId();
 
@@ -144,6 +147,36 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
 
         entityManager.teleport(loc);
         entityManager.setRotation((int) loc.getYaw(), isFirstPersonCompadible());
+        alignBackpackToBody(entity, backpackManager.getFirstArmorStandId(), entityManager.getViewers());
+    }
+
+    /** Armour-stand metadata index of the head pose: the client-flags byte is 15, the poses follow. */
+    private static final int HEAD_POSE_INDEX = 16;
+
+    /**
+     * Turn a worn backpack to face the wearer's BODY instead of wherever they are LOOKING.
+     *
+     * The stand's own yaw is the player's look yaw and stays that way — it cannot be changed from here:
+     * the stand is a PACKET passenger, and a client derives a rider's transform from its vehicle, so the
+     * teleport, rotate and rotate-head packets sent to it are all inert. (Measured: moving the teleport
+     * packet's position by 2 blocks does not move the cosmetic either.) What does reach the rider is
+     * METADATA — the stand is invisible because of metadata — so the correction is applied as a HEAD
+     * POSE laid over the stand's yaw.
+     *
+     * The pose is `look - body`. With the stand sitting at the look yaw, adding that leaves the head
+     * facing the body yaw. The direction is not a guess: a +90 head pose and a +30 look turn were each
+     * measured against the same camera and move the cosmetic OPPOSITE ways, so the pose has to subtract
+     * what the stand's yaw already added.
+     *
+     * Costs nothing when the two agree, which is every moving player: the pose is then zero.
+     */
+    private void alignBackpackToBody(@NotNull Entity entity, int armorStandId, List<Player> viewers) {
+        if (!(entity instanceof LivingEntity living)) return;
+        float correction = living.getLocation().getYaw() - living.getBodyYaw();
+        NMSHandlers.getHandler().getPacketBuilder()
+                .buildEntityPosePacket(armorStandId, Map.of(HEAD_POSE_INDEX,
+                        new EulerAngle(0, Math.toRadians(correction), 0)))
+                .sendPacket(viewers);
     }
 
     public boolean isFirstPersonCompadible() {
