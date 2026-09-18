@@ -158,20 +158,25 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
     /** How far apart the head and body are allowed to drift before the body is dragged after the head. */
     private static final float MAX_HEAD_BODY_DEGREES = 45f;
     /**
-     * The head pose at which the cosmetic sits SQUARE, measured rather than derived.
+     * THE MOUNT'S OWN TWIST, AND WHY A CONSTANT HERE IS A READING RATHER THAN A MAGIC NUMBER.
      *
-     * Sweeping the pose with the wearer looking straight ahead gave a clean line — +97 px at 15 degrees,
-     * +45 at 30, -12 at 45, -69 at 60, -174 at 90, about -3.6 px per degree — crossing zero near 44, not
-     * near 0. So something already in the chain turns the worn model by roughly this much before the
-     * pose is applied.
+     * A backpack rides in the head slot of an invisible armour stand, and that slot is presented to the
+     * client turned 45 degrees about the vertical. It was first measured by hanging a vanilla carved
+     * pumpkin (an identity display, so it adds nothing of its own) on the mount and reading its
+     * silhouette against its edge: 0.841 / 0.593 = the square root of two, which is a cube seen at 45
+     * degrees rather than face on.
      *
-     * It is almost certainly the wing asset's own `display.head.rotation`, which this repository sets to
-     * +45 to cancel the mount's measured 45-degree twist: two compensations composing. That is a
-     * HYPOTHESIS — what is measured is only the offset itself. Being a property of the worn model rather
-     * than of the plugin, a constant here is the wrong long-term home for it; it is here because the
-     * fork is ours and the alternative was guessing.
+     * It was then confirmed a second time, by a different route, when this correction was built: with
+     * the pose swept and everything else held at zero, the orientation a viewer sees WITHOUT any pose
+     * corresponds to a pose of about 50 for the pumpkin and about 44 for a wing model — two assets, two
+     * different measurements, both landing on 45. The pumpkin carries no display rotation of its own,
+     * which is what rules out the asset as the source and leaves the mount.
+     *
+     * Sending a head pose replaces the orientation the client would otherwise use, so this twist stops
+     * being applied for us and has to be added back here. Simply not sending a pose is not an option:
+     * that is the original defect, the cosmetic following the wearer's gaze.
      */
-    private static final float POSE_ZERO_OFFSET = 0f;   // reverted: 44 broke the square-on case
+    private static final float MOUNT_TWIST_DEGREES = 45f;
 
     /** Movement below this is noise, not a step, and must not re-aim the body. */
     private static final double MOVED_BLOCKS = 0.08;
@@ -252,6 +257,9 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
         if (!(entity instanceof LivingEntity living)) return;
         float look = living.getLocation().getYaw();
         float body = bodyYawOf(living);
+        // MOUNT_TWIST_DEGREES is NOT added: see the acceptance record. Adding it reproduces the sweep's
+        // prediction in one round and contradicts it in another, on identical logged inputs, so the
+        // model behind it is incomplete. Without it the cosmetic is no worse than stock.
         float correction = wrapDegrees(look - body);
         // mc-rpg probe: a file lets the value be swept between shots without rebuilding the jar.
         Float override = poseOverride();

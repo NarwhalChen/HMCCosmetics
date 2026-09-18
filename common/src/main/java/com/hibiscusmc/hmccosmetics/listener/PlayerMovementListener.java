@@ -46,6 +46,21 @@ public class PlayerMovementListener implements Listener {
         }
     }
 
+    /**
+     * How far a yaw must move before the cosmetics are refreshed. mc-rpg probe: read from
+     * `plugins/HMCCosmetics/gatetest.txt` so the trade-off between packet rate and how smoothly a worn
+     * cosmetic follows a turn can be measured without a rebuild. Absent: the stock 5 degrees.
+     */
+    private static float yawGate() {
+        try {
+            java.io.File f = new java.io.File(
+                    com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin.getInstance().getDataFolder(), "gatetest.txt");
+            if (!f.isFile()) return 5f;
+            String raw = java.nio.file.Files.readString(f.toPath()).trim();
+            return raw.isEmpty() ? 5f : Float.parseFloat(raw);
+        } catch (Throwable t) { return 5f; }
+    }
+
     private boolean updateDirtyLocation(final Player player, final Location nextLoc) {
         final SmallLocation previous = locations.computeIfAbsent(
             player.getUniqueId(),
@@ -58,7 +73,7 @@ public class PlayerMovementListener implements Listener {
             return true;
         }
 
-        if(next.yawDistanceTo(previous) > 5) {
+        if(next.yawDistanceTo(previous) > yawGate()) {
             this.locations.put(player.getUniqueId(), next);
             return true;
         }
@@ -67,7 +82,7 @@ public class PlayerMovementListener implements Listener {
         // yaw: a player who turns their head leaves the body behind, and the body then catches up on its
         // own. Watching only the look yaw leaves the cosmetic at a stale angle for as long as the player
         // holds still afterwards.
-        if(next.bodyYawDistanceTo(previous) > 5) {
+        if(next.bodyYawDistanceTo(previous) > yawGate()) {
             this.locations.put(player.getUniqueId(), next);
             return true;
         }

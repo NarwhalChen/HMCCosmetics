@@ -120,6 +120,11 @@ public class UserEntity {
 
     public void setRotation(int yaw, boolean additonalPacket) {
         location.setYaw(yaw);
+        // mc-rpg probe: the stand's own yaw as actually SENT, so a frame carries a reading here instead
+        // of an inference from the wearer's look.
+        com.hibiscusmc.hmccosmetics.util.MessagesUtil.sendDebugMessages(
+                "StandYaw ids " + ids + " yaw " + yaw + " locYaw " + location.getYaw()
+                        + " additional " + additonalPacket + " viewers " + getViewers().size());
         for (Integer entity : ids) {
             // First person backpacks need both packets to rotate properly, otherwise they look off
             // Regular backpacks just need the look packet
