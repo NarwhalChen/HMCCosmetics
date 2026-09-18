@@ -71,6 +71,18 @@ public final class HMCCosmeticsPlugin extends HibiscusPlugin {
         // Plugin startup logic
         instance = this;
 
+        // mc-rpg only: sample every online player's look and body yaw on a fixed cadence, so the two can
+        // be compared over a whole movement sequence rather than at whichever instants some other event
+        // happened to fire. Behind `debug-mode`, which is off by default.
+        Bukkit.getScheduler().runTaskTimer(this, () -> {
+            for (Player sampled : Bukkit.getOnlinePlayers()) {
+                org.bukkit.Location at = sampled.getLocation();
+                com.hibiscusmc.hmccosmetics.util.MessagesUtil.sendDebugMessages(
+                        "YawSeries " + sampled.getName() + " look " + at.getYaw() + " body " + sampled.getBodyYaw()
+                                + " x " + String.format("%.2f", at.getX()) + " z " + String.format("%.2f", at.getZ()));
+            }
+        }, 20L, 5L);
+
         // File setup
         saveDefaultConfig();
         if (!Path.of(getDataFolder().getPath(), "messages.yml").toFile().exists()) saveResource("messages.yml", false);
