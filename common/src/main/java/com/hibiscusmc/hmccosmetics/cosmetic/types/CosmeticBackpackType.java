@@ -7,6 +7,7 @@ import com.hibiscusmc.hmccosmetics.cosmetic.behavior.CosmeticUpdateBehavior;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
 import com.hibiscusmc.hmccosmetics.user.manager.UserBackpackManager;
 import com.hibiscusmc.hmccosmetics.user.manager.UserEntity;
+import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import com.hibiscusmc.hmccosmetics.util.packets.HMCCPacketManager;
 import lombok.Getter;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
@@ -173,6 +174,8 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
     private void alignBackpackToBody(@NotNull Entity entity, int armorStandId, List<Player> viewers) {
         if (!(entity instanceof LivingEntity living)) return;
         float correction = living.getLocation().getYaw() - living.getBodyYaw();
+        MessagesUtil.sendDebugMessages("Backpack pose for " + entity.getName() + ": look "
+                + living.getLocation().getYaw() + ", body " + living.getBodyYaw() + ", pose " + correction);
         NMSHandlers.getHandler().getPacketBuilder()
                 .buildEntityPosePacket(armorStandId, Map.of(HEAD_POSE_INDEX,
                         new EulerAngle(0, Math.toRadians(correction), 0)))
